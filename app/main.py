@@ -1,11 +1,18 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from typing import Optional
 import tempfile
 import os
 from pathlib import Path
 
 from app.services.parser import parse_pdf, parse_image, parse_docx, parse_pptx, parse_xlsx, OUTPUT_DIR
+
+# Supported languages for OCR
+SUPPORTED_LANGUAGES = [
+    "en", "ch", "korean", "japan", "chinese_cht", "ta", "te", "ka",
+    "th", "el", "latin", "arabic", "cyrillic", "devanagari"
+]
 
 app = FastAPI(
     title="MineRU Document Parser",
@@ -24,12 +31,16 @@ async def health_check():
 
 
 @app.post("/parse/pdf")
-async def parse_pdf_endpoint(file: UploadFile = File(...)):
+async def parse_pdf_endpoint(
+    file: UploadFile = File(...),
+    lang: Optional[str] = Form(default="en", description="Language for OCR: en, korean, ch, japan, etc.")
+):
     """
     Parse a PDF file and extract content.
 
     Args:
         file: PDF file to parse
+        lang: Language for OCR accuracy (default: en)
 
     Returns:
         Extracted content from the PDF
@@ -37,12 +48,20 @@ async def parse_pdf_endpoint(file: UploadFile = File(...)):
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="File must be a PDF")
 
+    if lang not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported language: {lang}. Supported: {SUPPORTED_LANGUAGES}"
+        )
+
     try:
         content = await file.read()
-        result = await parse_pdf(content, file.filename)
+        result = await parse_pdf(content, file.filename, lang=lang)
         return JSONResponse(content=result)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @app.post("/parse/image")

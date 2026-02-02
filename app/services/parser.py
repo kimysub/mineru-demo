@@ -19,22 +19,23 @@ OUTPUT_DIR = Path(__file__).parent.parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
-async def parse_pdf(content: bytes, filename: str) -> dict:
+async def parse_pdf(content: bytes, filename: str, lang: str = "en") -> dict:
     """
     Parse PDF content using MineRU.
 
     Args:
         content: PDF file content as bytes
         filename: Original filename
+        lang: Language for OCR (e.g., 'en', 'korean', 'ch', 'japan')
 
     Returns:
         Dictionary containing extracted content
     """
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, partial(_parse_pdf_sync, content, filename))
+    return await loop.run_in_executor(None, partial(_parse_pdf_sync, content, filename, lang))
 
 
-def _parse_pdf_sync(content: bytes, filename: str) -> dict:
+def _parse_pdf_sync(content: bytes, filename: str, lang: str = "en") -> dict:
     """Synchronous PDF parsing implementation."""
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
@@ -56,11 +57,11 @@ def _parse_pdf_sync(content: bytes, filename: str) -> dict:
         # Read and process the PDF
         pdf_bytes = reader.read(str(input_path))
 
-        # Create dataset and analyze
-        dataset = PymuDocDataset(pdf_bytes)
+        # Create dataset with language parameter
+        dataset = PymuDocDataset(pdf_bytes, lang=lang)
 
-        # Analyze document structure
-        infer_result = doc_analyze(dataset)
+        # Analyze document structure with language parameter
+        infer_result = doc_analyze(dataset, lang=lang)
 
         # Extract content based on classification
         if dataset.classify() == "ocr":
