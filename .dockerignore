@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Output
+output/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Docs (optional - remove if you want docs in container)
+*.md
+!app/**/*.md
+
+# Misc
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
