@@ -25,8 +25,13 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies in three phases:
+# 1. First install torch (required by detectron2's setup.py)
+# 2. Then install other dependencies
+# 3. Finally install detectron2 with --no-build-isolation (so it can find torch)
+RUN pip install --no-cache-dir torch && \
+    pip install --no-cache-dir $(grep -v -E '^#|detectron2' requirements.txt | tr '\n' ' ') && \
+    pip install --no-cache-dir --no-build-isolation "detectron2 @ git+https://github.com/facebookresearch/detectron2.git"
 
 # Copy application code
 COPY . .
