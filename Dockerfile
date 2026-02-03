@@ -32,6 +32,9 @@ COPY . .
 # Create output directory
 RUN mkdir -p /app/output
 
+# Copy MinerU config
+COPY magic-pdf.json /root/magic-pdf.json
+
 # Expose default port (can be overridden)
 EXPOSE 8000
 

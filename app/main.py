@@ -4,10 +4,21 @@ from fastapi.staticfiles import StaticFiles
 from typing import Optional
 import tempfile
 import os
+import logging
 from pathlib import Path
 
 from app.services.parser import parse_pdf, parse_image, parse_docx, parse_pptx, parse_xlsx, OUTPUT_DIR
-
+# Configure logging at the top of the file                                                                                                                                                                                                
+logging.basicConfig(                                                                                                                                                                                                                      
+    level=logging.DEBUG,                                                                                                                                                                                                                  
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',                                                                                                                                                                        
+    handlers=[                                                                                                                                                                                                                            
+        logging.FileHandler('app.log'),                                                                                                                                                                                                   
+        logging.StreamHandler()                                                                                                                                                                                                           
+    ]                                                                                                                                                                                                                                     
+)                                                                                                                                                                                                                                         
+logger = logging.getLogger(__name__)                                                                                                                                                                                                      
+                                                                                                                                                                                                                                          
 # Supported languages for OCR
 SUPPORTED_LANGUAGES = [
     "en", "ch", "korean", "japan", "chinese_cht", "ta", "te", "ka",
@@ -61,8 +72,8 @@ async def parse_pdf_endpoint(
     except Exception as e:
         import traceback
         error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        logger.error(f"PDF parsing failed: {error_detail}")  # Add this line                                                                                                                                                                  
         raise HTTPException(status_code=500, detail=error_detail)
-
 
 @app.post("/parse/image")
 async def parse_image_endpoint(file: UploadFile = File(...)):
