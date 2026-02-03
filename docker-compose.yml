@@ -12,6 +12,8 @@ services:
     volumes:
       # Persist output files
       - ./output:/app/output
+      # Mount MinerU models (download separately)
+      - ./models:/app/models
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${API_PORT:-8000}/health"]
