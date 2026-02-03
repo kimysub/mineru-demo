@@ -21,6 +21,9 @@ ENV/
 # Output
 output/
 
+# Models (mount as volume instead)
+models/
+
 # Docker
 Dockerfile
 docker-compose.yml

@@ -37,6 +37,8 @@ async def parse_pdf(content: bytes, filename: str, lang: str = "en") -> dict:
 
 def _parse_pdf_sync(content: bytes, filename: str, lang: str = "en") -> dict:
     """Synchronous PDF parsing implementation."""
+    import fitz  # PyMuPDF
+
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         input_path = temp_path / filename
@@ -60,20 +62,26 @@ def _parse_pdf_sync(content: bytes, filename: str, lang: str = "en") -> dict:
         # Create dataset with language parameter
         dataset = PymuDocDataset(pdf_bytes, lang=lang)
 
-        # Analyze document structure with language parameter
-        infer_result = doc_analyze(dataset, lang=lang)
-
-        # Extract content based on classification
-        if dataset.classify() == "ocr":
-            result = dataset.apply(infer_result, image_writer, md_writer, "ocr")
-        else:
-            result = dataset.apply(infer_result, image_writer, md_writer, "txt")
-
-        # Get markdown content
-        md_content = result.get_markdown()
-
-        # Get content list (structured data)
-        content_list = result.get_content_list()
+        # Try magic-pdf with full analysis, fall back to basic PyMuPDF extraction
+        try:
+            infer_result = doc_analyze(dataset, lang=lang)
+            if dataset.classify() == "ocr":
+                result = dataset.apply(infer_result, image_writer, md_writer, "ocr")
+            else:
+                result = dataset.apply(infer_result, image_writer, md_writer, "txt")
+            md_content = result.get_markdown()
+            content_list = result.get_content_list()
+        except FileNotFoundError as e:
+            # Fallback: use PyMuPDF for basic text extraction
+            print(f"Warning: Using fallback text extraction due to missing model: {e}")
+            doc = fitz.open(stream=content, filetype="pdf")
+            md_content = ""
+            content_list = []
+            for page_num, page in enumerate(doc):
+                text = page.get_text()
+                md_content += f"## Page {page_num + 1}\n\n{text}\n\n"
+                content_list.append({"page": page_num + 1, "text": text})
+            doc.close()
 
         # Generate output filename with timestamp
         base_name = Path(filename).stem

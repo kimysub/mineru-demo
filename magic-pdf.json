@@ -3,8 +3,14 @@
     "models-dir": "/app/models",
     "layoutreader-model-dir": "/app/models/layoutreader",
     "device-mode": "cpu",
+    "layout-config": {
+        "model": "doclayout_yolo"
+    },
     "table-config": {
         "is_table_recog_enable": false,
         "max_time": 400
+    },
+    "formula-config": {
+        "enable": false
     }
 }
