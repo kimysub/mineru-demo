@@ -134,66 +134,144 @@ def _parse_pdf_sync(content: bytes, filename: str, lang: str = "en") -> dict:
             md_content = result.get_markdown()
             content_list = result.get_content_list()
         except FileNotFoundError as e:
-            # Fallback: use pdfplumber for enhanced table extraction
+            # Fallback: use camelot + pdfplumber for enhanced table extraction
             print(f"Warning: Using fallback text extraction due to missing model: {e}")
             import pdfplumber
 
+            # Try camelot for better table extraction
+            try:
+                import camelot
+                use_camelot = True
+            except ImportError:
+                use_camelot = False
+                print("Warning: camelot not available, using pdfplumber only")
+
             md_content = ""
             content_list = []
+
+            # Extract tables with camelot (better accuracy for structured tables)
+            camelot_tables = {}
+            if use_camelot:
+                try:
+                    # Try lattice mode first (for tables with visible gridlines)
+                    lattice_tables = camelot.read_pdf(
+                        str(input_path),
+                        pages='all',
+                        flavor='lattice',
+                        strip_text='\n'
+                    )
+                    for table in lattice_tables:
+                        page_num = table.page
+                        if page_num not in camelot_tables:
+                            camelot_tables[page_num] = []
+                        camelot_tables[page_num].append({
+                            'data': table.df.values.tolist(),
+                            'bbox': table._bbox,
+                            'accuracy': table.accuracy
+                        })
+                except Exception as lattice_err:
+                    print(f"Camelot lattice extraction failed: {lattice_err}")
+
+                # Also try stream mode for borderless tables
+                try:
+                    stream_tables = camelot.read_pdf(
+                        str(input_path),
+                        pages='all',
+                        flavor='stream',
+                        strip_text='\n',
+                        edge_tol=50,
+                        row_tol=10
+                    )
+                    for table in stream_tables:
+                        page_num = table.page
+                        if page_num not in camelot_tables:
+                            camelot_tables[page_num] = []
+                        # Only add if accuracy is reasonable and not duplicate
+                        if table.accuracy > 50:
+                            is_duplicate = False
+                            for existing in camelot_tables.get(page_num, []):
+                                if existing['data'] == table.df.values.tolist():
+                                    is_duplicate = True
+                                    break
+                            if not is_duplicate:
+                                camelot_tables[page_num].append({
+                                    'data': table.df.values.tolist(),
+                                    'bbox': table._bbox,
+                                    'accuracy': table.accuracy
+                                })
+                except Exception as stream_err:
+                    print(f"Camelot stream extraction failed: {stream_err}")
 
             with pdfplumber.open(io.BytesIO(content)) as pdf:
                 for page_num, page in enumerate(pdf.pages):
                     page_content = f"## Page {page_num + 1}\n\n"
                     page_data = {"page": page_num + 1, "text": "", "tables": []}
 
-                    # Extract tables with pdfplumber (better detection)
-                    # Use "lines" strategy for more accurate table detection (fewer false positives)
-                    tables = page.extract_tables(table_settings={
-                        "vertical_strategy": "lines",
-                        "horizontal_strategy": "lines",
-                        "snap_tolerance": 5,
-                        "join_tolerance": 5,
-                        "edge_min_length": 10,
-                        "min_words_vertical": 3,
-                        "min_words_horizontal": 1,
-                    })
-
-                    # If no tables found with lines strategy, try text strategy for borderless tables
-                    if not tables:
-                        tables = page.extract_tables(table_settings={
-                            "vertical_strategy": "text",
-                            "horizontal_strategy": "text",
-                            "snap_tolerance": 5,
-                            "join_tolerance": 5,
-                            "min_words_vertical": 3,
-                            "min_words_horizontal": 2,
-                        })
-
+                    # Use camelot tables if available for this page
+                    page_tables = camelot_tables.get(page_num + 1, [])
                     table_bboxes = []
-                    if tables:
-                        for table_idx, table_data in enumerate(tables):
+
+                    if page_tables:
+                        # Use camelot tables (higher quality)
+                        for table_idx, table_info in enumerate(page_tables):
+                            table_data = table_info['data']
                             if table_data and len(table_data) > 0:
-                                # Convert table to markdown
                                 table_md = _list_table_to_markdown(table_data)
                                 if table_md:
                                     page_content += f"### Table {table_idx + 1}\n\n{table_md}\n\n"
                                     page_data["tables"].append({
                                         "index": table_idx + 1,
                                         "markdown": table_md,
-                                        "data": table_data
+                                        "data": table_data,
+                                        "accuracy": table_info.get('accuracy', 0)
                                     })
+                            if table_info.get('bbox'):
+                                table_bboxes.append(table_info['bbox'])
+                    else:
+                        # Fallback to pdfplumber for tables
+                        tables = page.extract_tables(table_settings={
+                            "vertical_strategy": "lines",
+                            "horizontal_strategy": "lines",
+                            "snap_tolerance": 5,
+                            "join_tolerance": 5,
+                            "edge_min_length": 10,
+                            "min_words_vertical": 3,
+                            "min_words_horizontal": 1,
+                        })
 
-                    # Also try to find tables using find_tables for better bbox detection
-                    found_tables = page.find_tables(table_settings={
-                        "vertical_strategy": "lines",
-                        "horizontal_strategy": "lines",
-                    })
-                    for t in found_tables:
-                        table_bboxes.append(t.bbox)
+                        # If no tables found with lines strategy, try text strategy
+                        if not tables:
+                            tables = page.extract_tables(table_settings={
+                                "vertical_strategy": "text",
+                                "horizontal_strategy": "text",
+                                "snap_tolerance": 5,
+                                "join_tolerance": 5,
+                                "min_words_vertical": 3,
+                                "min_words_horizontal": 2,
+                            })
+
+                        if tables:
+                            for table_idx, table_data in enumerate(tables):
+                                if table_data and len(table_data) > 0:
+                                    table_md = _list_table_to_markdown(table_data)
+                                    if table_md:
+                                        page_content += f"### Table {table_idx + 1}\n\n{table_md}\n\n"
+                                        page_data["tables"].append({
+                                            "index": table_idx + 1,
+                                            "markdown": table_md,
+                                            "data": table_data
+                                        })
+
+                        # Get table bboxes for text filtering
+                        found_tables = page.find_tables(table_settings={
+                            "vertical_strategy": "lines",
+                            "horizontal_strategy": "lines",
+                        })
+                        for t in found_tables:
+                            table_bboxes.append(t.bbox)
 
                     # Extract text excluding table areas
                     if table_bboxes:
-                        # Filter out text within table regions
                         chars = page.chars
                         filtered_chars = []
                         for char in chars:
@@ -205,7 +283,6 @@ def _parse_pdf_sync(content: bytes, filename: str, lang: str = "en") -> dict:
                                     break
                             if not in_table:
                                 filtered_chars.append(char)
-                        # Recreate text from filtered chars
                         if filtered_chars:
                             text = pdfplumber.utils.extract_text(filtered_chars)
                         else:
